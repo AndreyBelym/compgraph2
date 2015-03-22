@@ -11,22 +11,48 @@ using namespace std;
 
 const int main_size=300,arrow_size=130,tail_wdth=50,wdth=85,zwdth=20;
 const double deg=cos(45*M_PI/180);
-//double x=-1;
 
-//QPen zpalette[MaxColor+1];
+
+
+CompGraphView::CompGraphView(QWidget *parent) :
+    QWidget(parent),
+    ctx(800,800)
+{
+
+    light.position = {400,400,800};
+    light.constant = 0.5; light.linear = 0; light.quadratic = 0.000001;
+
+//    light.direction = {0,0,1};
+
+    shader.lightsource = &light;
+    renderer.shader = &shader;
+
+    setUserTransformation(Transformations::Identity());
+}
 
 void CompGraphView::setUserTransformation(const Matrix<4, 4, double> &t)
 {
     using namespace Transformations;
-    m_transformation=Move(400,400)*t*Scale(400,-400,400);
+    renderer.setTransform(t);
 }
 
-CompGraphView::CompGraphView(QWidget *parent) :
-    QWidget(parent),
-    ctx(800,800),
-    m_transformation(Transformations::Move(400,400)*Transformations::Scale(400,-400,400))
+void CompGraphView::readModel(const char *path)
 {
-    //Описание точек фигуры
+    Model m_model;
+    std::ifstream input(path);
+    m_model.parse(input);
+    renderer.setModel(m_model);
+}
+
+void CompGraphView::paintEvent(QPaintEvent*){
+
+    renderer.rasterize(ctx);
+
+    QPainter painter(this);
+    painter.drawImage(0,0,ctx.image);
+}
+
+//Описание точек фигуры
 //    figure_points<<Vector(0,0,zwdth); //0
 //    figure_points<<Vector(0,main_size,zwdth); //1
 //    figure_points<<Vector(main_size/2-deg*tail_wdth,main_size/2+deg*tail_wdth,zwdth); //2
@@ -118,26 +144,5 @@ CompGraphView::CompGraphView(QWidget *parent) :
 //    figure<<12<<0<<13<<25;
 //    figures<<figure;
 //    figure.clear();
-
-//    for(int i=0;i<=MaxColor;++i){
-//        zpalette[i]=QPen(QColor::fromHsl(i,255,127));
-//    }
-
-}
-
-void CompGraphView::readModel(const char *path)
-{
-    std::ifstream input(path);
-    m_model.parse(input);
-}
-
-void CompGraphView::paintEvent(QPaintEvent*){
-
-    Renderer<Context>::rasterize(ctx,m_model,m_transformation);
-
-    QPainter painter(this);
-    painter.drawImage(0,0,ctx.image);
-}
-
 
 

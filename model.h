@@ -51,6 +51,20 @@ class Vector{
         }
         return res;
     }
+    Vector operator +(const Vector& arg)const{
+        Vector res;
+        for(size_t i=0;i<N;i++){
+            res.set(i,m_data[i]+arg.m_data[i]);
+        }
+        return res;
+    }
+    Vector operator /(const double& arg)const{
+        Vector res;
+        for(size_t i=0;i<N;i++){
+            res.set(i,m_data[i]/arg);
+        }
+        return res;
+    }
     void normalize(){
         double temp=sqrt((*this)*(*this));
         for(size_t i=0;i<N;i++){
@@ -149,15 +163,15 @@ class Matrix{
     friend Vector<M,T> operator*(const Vector<N,T>& arg,const Matrix& obj){
         Vector<M,T> res;
         for(size_t j=0;j<M;j++){
-            res.m_data[j]=0;
+            res[j]=0;
             for(size_t k=0;k<M;k++){
-                res.m_data[j]+=arg[k]*obj.m_data[k][j];
+                res[j]+=arg[k]*obj.m_data[k][j];
             }
         }
 
         return res;
     }
-    operator Matrix<M,N,T>(){
+    Matrix<M,N,T> transpose() const{
         Matrix<M,N,T> res;
         for(size_t i=0;i<N;i++)
             for(size_t j=0;j<M;j++)
@@ -165,6 +179,135 @@ class Matrix{
         return res;
     }
 };
+
+inline Matrix<4,4,double> inverse(const Matrix<4,4,double>& m){
+    double det;
+    Matrix<4,4,double> inv;
+
+    inv(0,0) = m(1,1)  * m(2,2) * m(3,3) -
+             m(1,1)  * m(2,3) * m(3,2) -
+             m(2,1)  * m(1,2)  * m(3,3) +
+             m(2,1)  * m(1,3)  * m(3,2) +
+             m(3,1) * m(1,2)  * m(2,3) -
+             m(3,1) * m(1,3)  * m(2,2);
+
+    inv(1,0) = -m(1,0)  * m(2,2) * m(3,3) +
+              m(1,0)  * m(2,3) * m(3,2) +
+              m(2,0)  * m(1,2)  * m(3,3) -
+              m(2,0)  * m(1,3)  * m(3,2) -
+              m(3,0) * m(1,2)  * m(2,3) +
+              m(3,0) * m(1,3)  * m(2,2);
+
+    inv(2,0) = m(1,0)  * m(2,1) * m(3,3) -
+             m(1,0)  * m(2,3) * m(3,1) -
+             m(2,0)  * m(1,1) * m(3,3) +
+             m(2,0)  * m(1,3) * m(3,1) +
+             m(3,0) * m(1,1) * m(2,3) -
+             m(3,0) * m(1,3) * m(2,1);
+
+    inv(3,0) = -m(1,0)  * m(2,1) * m(3,2) +
+               m(1,0)  * m(2,2) * m(3,1) +
+               m(2,0)  * m(1,1) * m(3,2) -
+               m(2,0)  * m(1,2) * m(3,1) -
+               m(3,0) * m(1,1) * m(2,2) +
+               m(3,0) * m(1,2) * m(2,1);
+
+    inv(0,1) = -m(0,1)  * m(2,2) * m(3,3) +
+              m(0,1)  * m(2,3) * m(3,2) +
+              m(2,1)  * m(0,2) * m(3,3) -
+              m(2,1)  * m(0,3) * m(3,2) -
+              m(3,1) * m(0,2) * m(2,3) +
+              m(3,1) * m(0,3) * m(2,2);
+
+    inv(1,1) = m(0,0)  * m(2,2) * m(3,3) -
+             m(0,0)  * m(2,3) * m(3,2) -
+             m(2,0)  * m(0,2) * m(3,3) +
+             m(2,0)  * m(0,3) * m(3,2) +
+             m(3,0) * m(0,2) * m(2,3) -
+             m(3,0) * m(0,3) * m(2,2);
+
+    inv(2,1) = -m(0,0)  * m(2,1) * m(3,3) +
+              m(0,0)  * m(2,3) * m(3,1) +
+              m(2,0)  * m(0,1) * m(3,3) -
+              m(2,0)  * m(0,3) * m(3,1) -
+              m(3,0) * m(0,1) * m(2,3) +
+              m(3,0) * m(0,3) * m(2,1);
+
+    inv(3,1) = m(0,0)  * m(2,1) * m(3,2) -
+              m(0,0)  * m(2,2) * m(3,1) -
+              m(2,0)  * m(0,1) * m(3,2) +
+              m(2,0)  * m(0,2) * m(3,1) +
+              m(3,0) * m(0,1) * m(2,2) -
+              m(3,0) * m(0,2) * m(2,1);
+
+    inv(0,2) = m(0,1)  * m(1,2) * m(3,3) -
+             m(0,1)  * m(1,3) * m(3,2) -
+             m(1,1)  * m(0,2) * m(3,3) +
+             m(1,1)  * m(0,3) * m(3,2) +
+             m(3,1) * m(0,2) * m(1,3) -
+             m(3,1) * m(0,3) * m(1,2);
+
+    inv(1,2) = -m(0,0)  * m(1,2) * m(3,3) +
+              m(0,0)  * m(1,3) * m(3,2) +
+              m(1,0)  * m(0,2) * m(3,3) -
+              m(1,0)  * m(0,3) * m(3,2) -
+              m(3,0) * m(0,2) * m(1,3) +
+              m(3,0) * m(0,3) * m(1,2);
+
+    inv(2,2) = m(0,0)  * m(1,1) * m(3,3) -
+              m(0,0)  * m(1,3) * m(3,1) -
+              m(1,0)  * m(0,1) * m(3,3) +
+              m(1,0)  * m(0,3) * m(3,1) +
+              m(3,0) * m(0,1) * m(1,3) -
+              m(3,0) * m(0,3) * m(1,1);
+
+    inv(3,2) = -m(0,0)  * m(1,1) * m(3,2) +
+               m(0,0)  * m(1,2) * m(3,1) +
+               m(1,0)  * m(0,1) * m(3,2) -
+               m(1,0)  * m(0,2) * m(3,1) -
+               m(3,0) * m(0,1) * m(1,2) +
+               m(3,0) * m(0,2) * m(1,1);
+
+    inv(0,3) = -m(0,1) * m(1,2) * m(2,3) +
+              m(0,1) * m(1,3) * m(2,2) +
+              m(1,1) * m(0,2) * m(2,3) -
+              m(1,1) * m(0,3) * m(2,2) -
+              m(2,1) * m(0,2) * m(1,3) +
+              m(2,1) * m(0,3) * m(1,2);
+
+    inv(1,3) = m(0,0) * m(1,2) * m(2,3) -
+             m(0,0) * m(1,3) * m(2,2) -
+             m(1,0) * m(0,2) * m(2,3) +
+             m(1,0) * m(0,3) * m(2,2) +
+             m(2,0) * m(0,2) * m(1,3) -
+             m(2,0) * m(0,3) * m(1,2);
+
+    inv(2,3) = -m(0,0) * m(1,1) * m(2,3) +
+               m(0,0) * m(1,3) * m(2,1) +
+               m(1,0) * m(0,1) * m(2,3) -
+               m(1,0) * m(0,3) * m(2,1) -
+               m(2,0) * m(0,1) * m(1,3) +
+               m(2,0) * m(0,3) * m(1,1);
+
+    inv(3,3) = m(0,0) * m(1,1) * m(2,2) -
+              m(0,0) * m(1,2) * m(2,1) -
+              m(1,0) * m(0,1) * m(2,2) +
+              m(1,0) * m(0,2) * m(2,1) +
+              m(2,0) * m(0,1) * m(1,2) -
+              m(2,0) * m(0,2) * m(1,1);
+
+    det = m(0,0) * inv(0,0) + m(0,1) * inv(1,0) + m(0,2) * inv(2,0) + m(0,3) * inv(3,0);
+
+    assert(det!=0);
+
+    det = 1.0 / det;
+
+    for (size_t i = 0; i < 4; i++)
+        for(size_t j=0;j<4;j++)
+            inv(i,j) = inv(i,j) * det;
+
+    return inv;
+}
 
 namespace Transformations{
     typedef double arr[4][4];
@@ -307,6 +450,12 @@ class Point3: public Vector<3,double>{
     Point3 operator  -(const Point3& arg)const{
         return (Point3)(*((Vector<3,double>*)this)-arg);
     }
+    Point3 operator  +(const Point3& arg)const{
+        return (Point3)(*((Vector<3,double>*)this)+arg);
+    }
+    Point3 operator  /(const double& arg)const{
+        return (Point3)(*((Vector<3,double>*)this)/arg);
+    }
     void set(size_t i,const double& value){
         Vector::set(i,value);
     }
@@ -341,6 +490,10 @@ class Point4: public Vector<4,double>{
         return *this;
     }
 
+    friend Point4 operator *(const Point4& arg,const Matrix<4,4,double>& mat){
+        return (Vector<4,double>&)arg*mat;
+    }
+
     friend Point4 operator *(const Matrix<4,4,double>& mat,const Point4& arg){
         return mat*(Vector<4,double>&)arg;
     }
@@ -362,8 +515,14 @@ class Point4: public Vector<4,double>{
     void set(size_t i,const double& value){
         Vector::set(i,value);
     }
-    operator Point3(){
+    operator Point3()const{
         return Point3(x()/w(),y()/w(),z()/w());
+    }
+    static Point4 fromVector3(const Point3& p){
+        return Point4(p.x(),p.y(),p.z(),0);
+    }
+    Point3 toVector3() const {
+        return Point3(x(),y(),z());
     }
 };
 class Face{
@@ -404,12 +563,16 @@ class Model{
         symError
     };
     Symbol gettype(std::istream& input){
-        char c; Symbol s=symEOF; std::ios_base::fmtflags flags=input.flags();
+        char c; Symbol s=symEOF; std::ios_base::fmtflags flags=input.flags(); bool skip=false;
         input.flags(flags&(~std::ios_base::skipws));
         while(input.good()){
             input>>c;
-            if(isspace(c)){
+            if(isspace(c)||skip){
+                if(c=='\n'&&skip)
+                    skip = false;
                 continue;
+            } else if(c=='#'){
+                skip = true;
             } else if(c=='f'){
                 s=symFace;
                 break;

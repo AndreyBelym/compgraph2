@@ -3,7 +3,7 @@
 
 #include <QMainWindow>
 #include <QSpinBox>
-#include "model.h"
+#include "graphics.h"
 namespace Ui {
 class MainWindow;
 }
@@ -32,6 +32,8 @@ private slots:
 private:
 
     Ui::MainWindow *ui;
+
+
     Matrix<4,4,double> rotationOX,rotationOY,rotationOZ;
 
     void setTransformationMatrix();

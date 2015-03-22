@@ -12,9 +12,14 @@ public:
     void readModel(const char* path);
 private:
     //Отрисовка
-    Model m_model;
     Context ctx;
-    Matrix<4,4,double> m_transformation;
+
+    Renderer<Context> renderer;
+
+    GoraudShader shader;
+
+    SpotLight light;
+
     void paintEvent(QPaintEvent *event);    
 };
 
