@@ -14,13 +14,15 @@ TEMPLATE = app
 QMAKE_CXXFLAGS += -std=c++11 -D_USE_MATH_DEFINES
 SOURCES += main.cpp\
     mainwindow.cpp \
-    compgraphview.cpp
+    compgraphview.cpp \
+    optionswidget.cpp
 
 HEADERS  += \
     model.h \
     graphics.h \
     mainwindow.h \
-    compgraphview.h
+    compgraphview.h \
+    optionswidget.h
 
 FORMS    += \
     mainwindow.ui

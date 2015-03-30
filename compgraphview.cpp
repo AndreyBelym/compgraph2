@@ -19,34 +19,15 @@ CompGraphView::CompGraphView(QWidget *parent) :
     ctx(800,800)
 {
 
-    light.position = {400,400,800};
-    light.constant = 0.5; light.linear = 0; light.quadratic = 0.000001;
 
-//    light.direction = {0,0,1};
 
-    shader.lightsource = &light;
-    renderer.shader = &shader;
+    m_renderer.setContext(&ctx);
 
-    setUserTransformation(Transformations::Identity());
-}
-
-void CompGraphView::setUserTransformation(const Matrix<4, 4, double> &t)
-{
-    using namespace Transformations;
-    renderer.setTransform(t);
-}
-
-void CompGraphView::readModel(const char *path)
-{
-    Model m_model;
-    std::ifstream input(path);
-    m_model.parse(input);
-    renderer.setModel(m_model);
 }
 
 void CompGraphView::paintEvent(QPaintEvent*){
 
-    renderer.rasterize(ctx);
+    m_renderer.rasterize();
 
     QPainter painter(this);
     painter.drawImage(0,0,ctx.image);

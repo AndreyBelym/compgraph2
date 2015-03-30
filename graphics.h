@@ -8,6 +8,7 @@
 #include <QPainter>
 #include <QDebug>
 #include <algorithm>
+#include <QImageReader>
 #include "model.h"
 class RealInterpolator{
     int step,m_t,delta,dt;
@@ -24,6 +25,8 @@ class RealInterpolator{
             du=u1-u0;
             m=du/double(dt);
             step=dt>0?1:-1;
+        } else {
+            m_u=(u0+u1)/2;
         }
     }
     int next(){
@@ -49,22 +52,27 @@ class Bresenham{
     int error,dt,du,step_u,step_t;
     int (Bresenham::*m_next)(void);
   public:
+    Bresenham(){}
     Bresenham(int t0,int u0,int t1,int u1){
-        if(abs(u1-u0)>abs(t1-t0)){
-            m_next=&Bresenham::next_swapped;
-        } else {
-            m_next=&Bresenham::next_normal;
-        }
         m_t=t0;m_u=u0;m_t_end=t1;m_u_end=u1;
         dt=t1-t0;du=u1-u0;
         step_u=du>0?1:du==0?0:-1;
         step_t=dt>0?1:dt==0?0:-1;
-        if(dt<0){
+        if(dt<0)
             dt=-dt;
-        }
-
         if(du<0)
             du=-du;
+
+        if(dt==0){
+            m_u=(u0+u1)/2;
+            m_u_end = m_u;
+        }
+
+        if(du>dt){
+            m_next=&Bresenham::next_swapped;
+        } else {
+            m_next=&Bresenham::next_normal;
+        }
         error=0;
     }
     int next_normal(){
@@ -175,18 +183,34 @@ class ScanlineInterpolator{
     }
 };
 
+template <typename Context>
 class LightSource {
+  protected:
+    Context *m_ctx = 0;
+    Model *m_model = 0;
   public:
-    virtual double intensity(Point3&)=0;
-    virtual Point3 vector(Point3&)=0;
+
+    virtual double intensity(const Point3&, const Point3&)=0;
+    virtual Point3 vector(const Point3&)=0;
+    void setContext(Context* ctx){
+        m_ctx = ctx;
+    }
+    void setModel(Model* model_){
+        m_model = model_;
+    }
 };
 
-template <typename Color>
+template <typename Context>
 class Shader{
+  protected:
+    Context *m_ctx = 0;
+    LightSource<Context> *lightsource = 0;
+    Model *m_model = 0;
+
   public:
-    LightSource *lightsource;
+
     virtual void swap(size_t,size_t){}
-    virtual bool processFace(Model&,const Face&)=0;
+    virtual bool processFace(const Face&){return false;}
     virtual void processLongLine(){}
     virtual void stepLongLine(){}
     virtual void processShortLine1(){}
@@ -194,28 +218,70 @@ class Shader{
     virtual void stepShortLine(){}
     virtual void processScanLine(const Point&,const Point&){}
     virtual void stepScanLine(){}
-    virtual Color color()=0;
+    virtual typename Context::Color color(){return 0;}
+    virtual double intensity(){return 0;}
+
+    virtual void setModel(Model* model_){
+        m_model = model_;
+        if(lightsource)
+            lightsource->setModel(m_model);
+    }
+
+    virtual void setContext(Context* ctx){
+        m_ctx = ctx;
+        if(lightsource)
+            lightsource->setContext(m_ctx);
+    }
+    virtual void setLightSource(LightSource<Context>* lsource){
+        lightsource = lsource;
+        if(m_ctx)
+            lightsource->setContext(m_ctx);
+        if(m_model)
+            lightsource->setModel(m_model);
+    }
+    virtual LightSource<Context>* lightSource(){
+        return lightsource;
+    }
 };
 
 template <typename Context>
 class Renderer{
     Model m_model,m_temp_model;
     Matrix<4,4,double> m_transform, m_inverse_transform;
+
+    Context* m_ctx;
+    typename Context::Shader *m_shader;
+
   public:
-    Renderer(){
+    Renderer():m_ctx(0),m_shader(0){
         using namespace Transformations ;
 
         m_transform = Move(400,400)*Scale(-400,-400,400);
         m_inverse_transform = inverse(m_transform);
 
+    }
+
+    void setContext(Context *ctx){
+        m_ctx = ctx;
+        if(m_shader)
+            m_shader->setContext(m_ctx);
 
     }
 
-    typename Context::Shader *shader;
+    void setShader(typename Context::Shader *shader){
+        m_shader = shader;
+
+        if(m_ctx)
+            shader->setContext(m_ctx);
+
+        m_shader->setModel(&m_temp_model);
+    }
 
     void setModel(const Model& m){
         m_model = m;
         m_temp_model = m_model;
+        if(m_shader)
+            m_shader->setModel(&m_temp_model);
     }
 
     void setTransform(const Matrix<4,4,double>& transform){
@@ -223,55 +289,58 @@ class Renderer{
 
         m_transform=Move(400,400)*Scale(-400,-400,400)*transform;
         m_inverse_transform = inverse(m_transform);
-
-
     }
 
-    inline void drawPoint(Context& ctx,const Point& p){
-        if(p.x>=0&&p.x<int(ctx.width())&&
-            p.y>=0&&p.y<int(ctx.height())&&
-             p.z>=ctx.zBuffer(p.x,p.y)){
-            ctx.setZBuffer(p.x,p.y,p.z);
-            ctx.setColorBuffer(p.x,p.y,shader->color());
+    inline void drawPoint(const Point& p){
+        if(p.x>=0&&p.x<int(m_ctx->width())&&
+            p.y>=0&&p.y<int(m_ctx->height())&&
+             p.z>=m_ctx->zBuffer(p.x,p.y)){
+            m_ctx->setZBuffer(p.x,p.y,p.z);
+            m_ctx->setColorBuffer(p.x,p.y,m_shader->color());
         }
     }
 
     template <typename TX, typename TZ,typename TZ2>
-    inline void drawHalfTriangle(Context& ctx,LineInterpolator<TX,TZ> &line1,LineInterpolator<TX,TZ> &line2){
+    inline void drawHalfTriangle(LineInterpolator<TX,TZ> &line1,LineInterpolator<TX,TZ> &line2){
         do{
             ScanlineInterpolator<TZ2> sline(line1.current(),line2.current());
-            shader->processScanLine(line1.current(),line2.current());
+
+            m_shader->processScanLine(line1.current(),line2.current());
 
             do{
-                drawPoint(ctx,sline.current());
-                shader->stepScanLine();
+                drawPoint(sline.current());
+                m_shader->stepScanLine();
             }while(sline.next());
 
-            shader->stepLongLine(); shader->stepShortLine();
+            m_shader->stepLongLine(); m_shader->stepShortLine();
         }while(line2.next()&&line1.next());
     }
 
     template <typename TX=Bresenham, typename TZ=RealInterpolator, typename TZ2=RealInterpolator>
-    inline void drawTriangle(Context& ctx,const Point& p1,const Point& p2,const Point& p3){
+    inline void drawTriangle(const Point& p1,const Point& p2,const Point& p3){
 
         LineInterpolator<TX,TZ> line1(p1,p3);
-        shader->processLongLine();
+
+        m_shader->processLongLine();
 
         if(p1.y!=p2.y){
             LineInterpolator<TX,TZ> line2(p1,p2);
-            shader->processShortLine1();
-            drawHalfTriangle<TX,TZ,TZ2>(ctx,line1,line2);
+            m_shader->processShortLine1();
+            drawHalfTriangle<TX,TZ,TZ2>(line1,line2);
         }
         if(p2.y!=p3.y){
             LineInterpolator<TX,TZ> line2(p2,p3);
-            shader->processShortLine2();
-            drawHalfTriangle<TX,TZ,TZ2>(ctx,line1,line2);
+            m_shader->processShortLine2();
+            drawHalfTriangle<TX,TZ,TZ2>(line1,line2);
         }
     }
 
     template <typename TX=Bresenham, typename TZ=RealInterpolator, typename TZ2=RealInterpolator>
-    void rasterize(Context& ctx){
-        ctx.prepare();
+    void rasterize(){
+        if(!m_shader||!m_model.faces.size())
+            return;
+
+        m_ctx->prepare();
 
         m_temp_model.vertices.clear();
         for(const auto& v:m_model.vertices){
@@ -285,16 +354,12 @@ class Renderer{
             t.normalize();
             m_temp_model.vertex_normals.push_back(t);
         }
-        int i=0;
+
         for (const Face& f:m_temp_model.faces){
 
-            i++;
-
-
-            //
             if(f.v[0]!=f.vn[0]||f.v[1]!=f.vn[1]||f.v[2]!=f.vn[2])
                 qDebug()<<f.v[0]<<f.vn[0]<<f.v[1]<<f.vn[1]<<f.v[2]<<f.vn[2];
-            if(shader->processFace(m_temp_model,f)){
+            if(m_shader->processFace(f)){
                 Point p1,p2,p3;
                 p1=m_temp_model.vertices[f.v[0]];
                 p2=m_temp_model.vertices[f.v[1]];
@@ -302,32 +367,34 @@ class Renderer{
 
                 if (p1.y>p2.y){
                     std::swap(p1,p2);
-                    shader->swap(0,1);
+                    m_shader->swap(0,1);
                 }
                 if(p2.y>p3.y){
                     std::swap(p2,p3);
-                    shader->swap(1,2);
+                    m_shader->swap(1,2);
                     if(p1.y>p2.y){
                         std::swap(p1,p2);
-                        shader->swap(0,1);
+                        m_shader->swap(0,1);
                     }
                 }
                 if(p1.y==p3.y||(p1.x==p2.x&&p1.x==p3.x)) continue;
-                drawTriangle(ctx,p1,p2,p3);
+                drawTriangle(p1,p2,p3);
             }
 
         }
-        ctx.done();
+        m_ctx->done();
     }
 };
 
 
 struct Context{
-  private:
+  protected:
     Context(const Context&);
     void operator=(const Context&);
   public:
-    typedef Shader<QRgb> Shader;
+    typedef QRgb Color;
+    typedef ::Shader<Context> Shader;
+
     size_t m_width,m_height;
     QImage image;
     std::vector<double> zbuf;
@@ -374,28 +441,107 @@ struct Context{
     const size_t& height() const {
         return m_height;
     }
+    Point3 camera(){
+        return Point3(m_width/2, m_height/2, m_width/2);
+    }
+};
+class TextureShader: public Shader<Context> {
+  private:
+    struct TexCoords{
+        int x,y;
+    };
+    QRgb c;
+    QImage m_tex;
+    Point3 points[3];
+    TexCoords m_tex_coords[3];
+    Bresenham long_inter_x,short_inter_x,scan_inter_x,
+              long_inter_y,short_inter_y,scan_inter_y;
+  public:
+    TextureShader()
+        :m_tex(1,1,QImage::Format_RGB32){
+        m_tex.fill(Qt::white);
+    }
+    void loadTexture(const char *filename){
+        if(m_tex.load(filename))
+            m_tex = m_tex.mirrored(false,true);
+        else {
+            m_tex = QImage(1,1,QImage::Format_RGB32);
+            m_tex.fill(Qt::white);
+        }
+    }
+
+    bool processFace(const Face& face){
+        for(size_t i=0;i<3;i++){
+            points[i] = m_model->vertices[face.v[i]];
+            m_tex_coords[i].x = int(m_model->texture_coords[face.vt[i]][0] * m_tex.width());
+            m_tex_coords[i].y = int(m_model->texture_coords[face.vt[i]][1] * m_tex.height());
+        }
+        return true;
+    }
+
+    void swap(size_t i, size_t j){
+        std::swap(points[i],points[j]);
+        std::swap(m_tex_coords[i],m_tex_coords[j]);
+    }
+
+    virtual QRgb color(){
+        return m_tex.pixel(scan_inter_x.u(),scan_inter_y.u());
+    }
+
+    virtual void processLongLine(){
+        long_inter_x = Bresenham(points[0].y(),m_tex_coords[0].x,points[2].y(),m_tex_coords[2].x);
+        long_inter_y = Bresenham(points[0].y(),m_tex_coords[0].y,points[2].y(),m_tex_coords[2].y);
+    }
+    virtual void stepLongLine(){
+        long_inter_x.next();
+        long_inter_y.next();
+    }
+    virtual void processShortLine1(){
+        short_inter_x = Bresenham(points[0].y(),m_tex_coords[0].x,points[1].y(),m_tex_coords[1].x);
+        short_inter_y = Bresenham(points[0].y(),m_tex_coords[0].y,points[1].y(),m_tex_coords[1].y);
+    }
+    virtual void processShortLine2(){
+        short_inter_x = Bresenham(points[1].y(),m_tex_coords[1].x,points[2].y(),m_tex_coords[2].x);
+        short_inter_y = Bresenham(points[1].y(),m_tex_coords[1].y,points[2].y(),m_tex_coords[2].y);
+    }
+
+    virtual void stepShortLine(){
+        short_inter_x.next();
+        short_inter_y.next();
+    }
+    virtual void processScanLine(const Point& p1,const Point& p2){
+        scan_inter_x = Bresenham(p1.x,long_inter_x.u(),p2.x,short_inter_x.u());
+        scan_inter_y = Bresenham(p1.x,long_inter_y.u(),p2.x,short_inter_y.u());
+    }
+    virtual void stepScanLine(){
+        scan_inter_x.next();
+        scan_inter_y.next();
+    }
 };
 
-class FlatShader: public Shader<QRgb> {
+class FlatShader: public Shader<Context> {
   private:
     QRgb c;
+    double i;
   public:
-    bool processFace(const Model& model,const Face& face){
-        //const Face& face = model.faces[faceNum];
-        Point3 p0 = model.vertices[face.v[0]],
-               p1 = model.vertices[face.v[1]],
-               p2 = model.vertices[face.v[2]];
+    bool processFace(const Face& face){
+        Point3 p0 = m_model->vertices[face.v[0]],
+               p1 = m_model->vertices[face.v[1]],
+               p2 = m_model->vertices[face.v[2]];
 
         Point3 culling_dir={0,0,1},vn,barycenter = (p0+p1+p2)/3;
         vn=(p1-p0).cross(p2-p0);
         vn.normalize();
-        //vn = (model.vertex_normals[face.vn[0]] + model.vertex_normals[face.vn[1]] + model.vertex_normals[face.vn[2]])/double(-3);
-        double culling=vn*culling_dir,
-               intensity=lightsource->intensity(barycenter)*(lightsource->vector(barycenter)*vn);
+//        vn = (m_model->vertex_normals[face.vn[0]] +
+//                m_model->vertex_normals[face.vn[1]] +
+//                m_model->vertex_normals[face.vn[2]])/3;
+        double culling=vn*culling_dir;
 
-        intensity = intensity>=0?intensity:0;
+        i=lightsource->intensity(barycenter, vn);
+
+        i = i>=0?(i>1?1:i):0;
         if(culling >= 0){
-            c=qRgb(255*intensity,255*intensity,255*intensity);
+            c=qRgb(255*i,255*i,255*i);
             return true;
         } else {
             return false;
@@ -405,19 +551,22 @@ class FlatShader: public Shader<QRgb> {
     virtual QRgb color(){
         return c;
     }
+
+    virtual double intensity(){
+        return i;
+    }
 };
 
-class GoraudShader: public Shader<QRgb> {
+class GoraudShader: public Shader<Context> {
   private:
     QRgb c;
-    double intensity[3];
+    double m_intensity[3];
     Point3 points[3];
     RealInterpolator long_inter,short_inter,scan_inter;
   public:
-    bool processFace(Model& model,const Face& face){
-        //const Face& face = model.faces[faceNum];
+    bool processFace(const Face& face){
         for(size_t i=0;i<3;i++){
-            points[i] = model.vertices[face.v[i]];
+            points[i] = m_model->vertices[face.v[i]];
         }
 
         Point3 culling_dir={0,0,-1},vn;
@@ -429,11 +578,9 @@ class GoraudShader: public Shader<QRgb> {
 
         if(culling > 0){
             for(size_t i=0;i<3;i++){
-                intensity[i]=-lightsource->intensity(points[i])
-                                *(lightsource->vector(points[i])*model.vertex_normals[face.vn[i]]);
+                const Point3& vn = m_model->vertex_normals[face.vn[i]];
+                m_intensity[i]=lightsource->intensity(points[i],vn);
             }
-            //assert(intensity[0]==intensity[1]&&intensity[1]==intensity[2]);
-
             return true;
         } else {
             return false;
@@ -442,27 +589,32 @@ class GoraudShader: public Shader<QRgb> {
 
     void swap(size_t i, size_t j){
         std::swap(points[i],points[j]);
-        std::swap(intensity[i],intensity[j]);
+        std::swap(m_intensity[i],m_intensity[j]);
     }
 
     virtual QRgb color(){
-        double intensity = scan_inter.u()>=0?scan_inter.u():0;
-        intensity = intensity>1?1:intensity;
-        c=qRgb(255*intensity,255*intensity,255*intensity);
+        double i = intensity();
+        c=qRgb(255*i,255*i,255*i);
         return c;
     }
 
+    virtual double intensity(){
+        double i = scan_inter.u()>=0?scan_inter.u():0;
+        i = i>1?1:i;
+        return i;
+    }
+
     virtual void processLongLine(){
-        long_inter = RealInterpolator(points[0].y(),intensity[0],points[2].y(),intensity[2]);
+        long_inter = RealInterpolator(points[0].y(),m_intensity[0],points[2].y(),m_intensity[2]);
     }
     virtual void stepLongLine(){
         long_inter.next();
     }
     virtual void processShortLine1(){
-        short_inter = RealInterpolator(points[0].y(),intensity[0],points[1].y(),intensity[1]);
+        short_inter = RealInterpolator(points[0].y(),m_intensity[0],points[1].y(),m_intensity[1]);
     }
     virtual void processShortLine2(){
-        short_inter = RealInterpolator(points[1].y(),intensity[1],points[2].y(),intensity[2]);
+        short_inter = RealInterpolator(points[1].y(),m_intensity[1],points[2].y(),m_intensity[2]);
     }
     virtual void stepShortLine(){
         short_inter.next();
@@ -473,29 +625,139 @@ class GoraudShader: public Shader<QRgb> {
     virtual void stepScanLine(){
         scan_inter.next();
     }
-
 };
 
-class DirectionalLight:public LightSource {
+class DirectionalLight:public LightSource<Context> {
   public:
     Point3 direction;
-    double intensity(Point3&){return 1;}
-    Point3 vector(Point3&){return direction;}
+    double ambient, diffuse, specular, shiness;
+    double intensity(const Point3& p,const Point3& v_N){
+        Point3 v_V = m_ctx->camera()  - p, v_R = v_N*2*(direction*v_N)-direction;
+
+        v_V.normalize(); v_R.normalize();
+        double i_D = diffuse*(direction*v_N), i_S = 1;
+        if(i_D>0){
+            double t = v_R*v_V;
+            if(t>0){
+                i_S = specular*pow(t,shiness);
+                i_S = i_S>=0?i_S:0;
+            } else {
+                i_S = 0;
+            }
+
+        } else {
+            i_D = i_S = 0;
+        }
+        return ambient + i_D + i_S;
+    }
+
+    Point3 vector(const Point3&){return direction;}
 };
 
-class SpotLight:public LightSource {
+class PointLight:public LightSource<Context> {
   public:
     Point3 position;
     double constant, linear, quadratic;
-    double intensity(Point3& p){
-        Point3 v=p-position;
-        double d = sqrt(v*v),falloff = 1/(constant + d*linear + d*d*quadratic);
-        return falloff;
+    double ambient, diffuse, specular, shiness;
+
+    double intensity(const Point3& p,const Point3& v_N){
+        Point3 v_L=position - p;
+        double d = sqrt(v_L*v_L),i_D = 1/(constant + d*linear + d*d*quadratic), i_S = i_D;
+
+        v_L.normalize();
+        Point3 v_V = m_ctx->camera()  - p, v_R = v_N*2*(v_L*v_N)-v_L;
+
+        v_V.normalize(); v_R.normalize();
+        i_D *= diffuse*(v_L*v_N);
+        if(i_D>0){
+            double t = v_R*v_V;
+            if(t>0){
+                i_S *= specular*pow(t,shiness);
+                i_S = i_S>=0?i_S:0;
+            } else {
+                i_S = 0;
+            }
+
+        } else {
+            i_D = i_S = 0;
+        }
+        return ambient + i_D + i_S;
     }
-    Point3 vector(Point3& p){
-        Point3 v=(p-position);
+    Point3 vector(const Point3& p){
+        Point3 v=(position - p);
         v.normalize();
         return v;
+    }
+};
+
+class GoraudShaderTextured: public GoraudShader{
+  private:
+    TextureShader m_texshader;
+  public:
+    virtual void swap(size_t a,size_t b){
+        GoraudShader::swap(a,b);
+        m_texshader.swap(a,b);
+    }
+    virtual bool processFace(const Face& face){
+        m_texshader.processFace(face);
+        return GoraudShader::processFace(face);
+    }
+    virtual void processLongLine(){
+        m_texshader.processLongLine();
+        GoraudShader::processLongLine();
+    }
+    virtual void stepLongLine(){
+        m_texshader.stepLongLine();
+        GoraudShader::stepLongLine();
+    }
+    virtual void processShortLine1(){
+        m_texshader.processShortLine1();
+        GoraudShader::processShortLine1();
+    }
+    virtual void processShortLine2(){
+        m_texshader.processShortLine2();
+        GoraudShader::processShortLine2();
+    }
+    virtual void stepShortLine(){
+        m_texshader.stepShortLine();
+        GoraudShader::stepShortLine();
+    }
+    virtual void processScanLine(const Point& p1,const Point& p2){
+        m_texshader.processScanLine(p1,p2);
+        GoraudShader::processScanLine(p1,p2);
+    }
+    virtual void stepScanLine(){
+        m_texshader.stepScanLine();
+        GoraudShader::stepScanLine();
+    }
+    virtual Context::Color color(){
+        QColor c(m_texshader.color());
+        double i = GoraudShader::intensity();
+        return qRgb(c.red()*i,c.green()*i,c.blue()*i);
+    }
+    virtual double intensity(){
+        return GoraudShader::intensity();
+    }
+
+    virtual void setModel(Model* model_){
+        m_texshader.setModel(model_);
+        GoraudShader::setModel(model_);
+    }
+
+    virtual void setContext(Context* ctx){
+        m_texshader.setContext(ctx);
+        GoraudShader::setContext(ctx);
+    }
+    void loadTexture(const char *filename){
+        m_texshader.loadTexture(filename);
+    }
+
+    virtual void setLightSource(LightSource<Context>* lsource){
+        m_texshader.setLightSource(lsource);
+        GoraudShader::setLightSource(lsource);
+    }
+    virtual LightSource<Context>* lightSource(){
+        return GoraudShader::lightSource();
     }
 };
 

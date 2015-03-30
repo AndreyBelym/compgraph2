@@ -7,18 +7,17 @@ class CompGraphView : public QWidget
 {
     Q_OBJECT
 public:
-    void setUserTransformation(const Matrix<4,4,double>& t);
     explicit CompGraphView(QWidget *parent = 0);
-    void readModel(const char* path);
+    inline Renderer<Context> *renderer(){return &m_renderer;}
 private:
     //Отрисовка
     Context ctx;
 
-    Renderer<Context> renderer;
+    Renderer<Context> m_renderer;
 
-    GoraudShader shader;
+    GoraudShaderTextured shader;
 
-    SpotLight light;
+    PointLight light;
 
     void paintEvent(QPaintEvent *event);    
 };

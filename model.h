@@ -58,10 +58,17 @@ class Vector{
         }
         return res;
     }
-    Vector operator /(const double& arg)const{
+    Vector operator /(const T& arg)const{
         Vector res;
         for(size_t i=0;i<N;i++){
             res.set(i,m_data[i]/arg);
+        }
+        return res;
+    }
+    Vector operator *(const T& arg)const{
+        Vector res;
+        for(size_t i=0;i<N;i++){
+            res.set(i,m_data[i]*arg);
         }
         return res;
     }
@@ -455,6 +462,12 @@ class Point3: public Vector<3,double>{
     }
     Point3 operator  /(const double& arg)const{
         return (Point3)(*((Vector<3,double>*)this)/arg);
+    }
+    Point3 operator  *(const double& arg)const{
+        return (Point3)(*((Vector<3,double>*)this)*arg);
+    }
+    double operator  *(const Point3& arg)const{
+        return *((Vector<3,double>*)this)*arg;
     }
     void set(size_t i,const double& value){
         Vector::set(i,value);
